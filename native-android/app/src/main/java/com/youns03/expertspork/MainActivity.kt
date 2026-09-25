@@ -4,6 +4,8 @@ import android.content.Context
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Bundle
+import java.io.File
+import java.time.Instant
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -58,13 +60,14 @@ private fun NativeHomeScreen() {
     var selectedUri by remember { mutableStateOf<Uri?>(null) }
     var selectedMime by remember { mutableStateOf("audio/mp3") }
     var transcription by remember { mutableStateOf<TranscriptionResult?>(null) }
+    var projects by remember { mutableStateOf(store.list()) }
     var status by remember { mutableStateOf("اختر ملفًا صوتيًا للبدء") }
     var loading by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        store.load()?.let {
-            transcription = it
-            status = "تمت استعادة آخر تفريغ محليًا"
+        projects.firstOrNull()?.let {
+            transcription = it.transcription
+            status = "تمت استعادة آخر مشروع محليًا"
         }
     }
 
@@ -107,7 +110,14 @@ private fun NativeHomeScreen() {
                         }
                         result.onSuccess {
                             transcription = it
-                            store.save(it)
+                            val projectId = "project-${System.currentTimeMillis()}"
+                            val projectFile = File(context.filesDir, "projects/$projectId.audio")
+                            projectFile.parentFile?.mkdirs()
+                            context.contentResolver.openInputStream(uri)?.use { input ->
+                                projectFile.outputStream().use { output -> input.copyTo(output) }
+                            } ?: error("تعذر حفظ الملف محليًا")
+                            store.save(NativeProject(projectId, it.title, Instant.now().toString(), selectedMime, projectFile.absolutePath, it))
+                            projects = store.list()
                             status = "اكتمل التفريغ: ${it.sentences.size} جمل"
                         }.onFailure {
                             status = "فشل التفريغ: ${it.message}"
@@ -122,6 +132,20 @@ private fun NativeHomeScreen() {
 
         if (loading) CircularProgressIndicator()
         Text(status)
+
+        if (projects.isNotEmpty()) {
+            Text("المشاريع المحفوظة", style = MaterialTheme.typography.titleMedium)
+            projects.take(5).forEach { project ->
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(project.title, modifier = Modifier.weight(1f))
+                    Button(onClick = {
+                        transcription = project.transcription
+                        status = "تم فتح المشروع محليًا"
+                    }) { Text("فتح") }
+                    Button(onClick = { audioPlayer.playFile(File(project.audioPath)) }) { Text("تشغيل") }
+                }
+            }
+        }
 
         transcription?.let { result ->
             Text(result.title, style = MaterialTheme.typography.titleLarge)
@@ -167,10 +191,14 @@ private class NativeAudioPlayer(private val context: Context) {
     fun play(bytes: ByteArray) {
         val file = java.io.File.createTempFile("expert-spork-", ".mp3", context.cacheDir)
         file.writeBytes(bytes)
+        playFile(file, deleteWhenComplete = true)
+    }
+
+    fun playFile(file: File, deleteWhenComplete: Boolean = false) {
         player?.release()
         player = MediaPlayer().apply {
             setDataSource(file.absolutePath)
-            setOnCompletionListener { file.delete() }
+            if (deleteWhenComplete) setOnCompletionListener { file.delete() }
             prepare()
             start()
         }

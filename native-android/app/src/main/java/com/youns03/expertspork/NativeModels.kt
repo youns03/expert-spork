@@ -22,3 +22,12 @@ data class TranscriptionResult(
     val duration: Double,
     val sentences: List<SentenceItem>
 )
+
+data class NativeProject(
+    val id: String,
+    val title: String,
+    val createdAt: String,
+    val mimeType: String,
+    val audioPath: String,
+    val transcription: TranscriptionResult
+)
