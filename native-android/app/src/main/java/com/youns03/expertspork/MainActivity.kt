@@ -24,6 +24,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,12 +53,20 @@ private fun NativeHomeScreen() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val backend = remember { BackendClient() }
+    val store = remember { NativeProjectStore(context) }
     val audioPlayer = remember { NativeAudioPlayer(context) }
     var selectedUri by remember { mutableStateOf<Uri?>(null) }
     var selectedMime by remember { mutableStateOf("audio/mp3") }
     var transcription by remember { mutableStateOf<TranscriptionResult?>(null) }
     var status by remember { mutableStateOf("اختر ملفًا صوتيًا للبدء") }
     var loading by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        store.load()?.let {
+            transcription = it
+            status = "تمت استعادة آخر تفريغ محليًا"
+        }
+    }
 
     DisposableEffect(audioPlayer) {
         onDispose { audioPlayer.release() }
@@ -98,6 +107,7 @@ private fun NativeHomeScreen() {
                         }
                         result.onSuccess {
                             transcription = it
+                            store.save(it)
                             status = "اكتمل التفريغ: ${it.sentences.size} جمل"
                         }.onFailure {
                             status = "فشل التفريغ: ${it.message}"
