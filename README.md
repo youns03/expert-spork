@@ -18,3 +18,22 @@ View your app in AI Studio: https://ai.studio/apps/818f9fc2-1124-4452-8891-76c96
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## Android APK with Capacitor
+
+The Android wrapper is generated in `android/` and preserves the existing React UI. Before building the APK, set `VITE_API_BASE_URL` to the HTTPS URL of the deployed Node backend in the environment used for the build. Keep `GEMINI_API_KEY` on the backend only; it must never be placed in the APK.
+
+Install dependencies, build the web assets, and synchronize Capacitor:
+
+```bash
+pnpm install
+pnpm run mobile:build
+```
+
+Then open the Android project in Android Studio and build or run the APK:
+
+```bash
+pnpm run mobile:open
+```
+
+The backend remains required for `/api/tts`, `/api/translate`, and `/api/transcribe-audio`. The Android SDK and Android Studio are required to produce the final APK or AAB.

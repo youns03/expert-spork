@@ -10,6 +10,7 @@ import {
   Cpu 
 } from 'lucide-react';
 import { getModelCacheInfo, clearModelCache } from '../utils/offlineDb';
+import { apiUrl } from '../utils/api';
 import { AVAILABLE_FRENCH_VOICES } from '../utils/ttsEngine';
 
 interface VoiceModelManagerModalProps {
@@ -71,7 +72,7 @@ export const VoiceModelManagerModal: React.FC<VoiceModelManagerModalProps> = ({
       setIsPlayingTest(true);
       const testPhrase = 'Bonjour ! La langue française est très belle et mélodieuse.';
 
-      const res = await fetch('/api/tts', {
+      const res = await fetch(apiUrl('/api/tts'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

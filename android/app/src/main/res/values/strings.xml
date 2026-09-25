@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Expert Spork</string>
+    <string name="title_activity_main">Expert Spork</string>
+    <string name="package_name">com.youns03.expertspork</string>
+    <string name="custom_url_scheme">com.youns03.expertspork</string>
+</resources>

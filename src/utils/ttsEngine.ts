@@ -11,6 +11,7 @@ import { segmentFrenchText } from './frenchTextSegmenter';
 import { translateFrenchSentenceToArabicAsync, translateFrenchSentencesBatchAsync, lookupFrenchWordInArabic } from './frenchTranslator';
 import { audioBufferToWav, concatenateAudioBuffers } from './wavEncoder';
 import { saveLessonOffline, saveAudioBlob } from './offlineDb';
+import { apiUrl } from './api';
 
 // Client-side synthesis memory cache
 const clientSentenceAudioCache = new Map<string, { audioBuffer: AudioBuffer; duration: number; subtitles: TTSWordSubtitle[] }>();
@@ -138,7 +139,7 @@ export async function synthesizeSingleSentence(
 
   // 1. Call server-side French Male Neural TTS (NO Gemini)
   try {
-    const response = await fetch('/api/tts', {
+    const response = await fetch(apiUrl('/api/tts'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

@@ -4,6 +4,8 @@
  * Strictly avoids literal fragmentation and ensures pure, fluent Arabic.
  */
 
+import { apiUrl } from './api';
+
 // In-memory translation cache for rapid lookup without re-fetching
 const translationCache = new Map<string, string>();
 
@@ -370,7 +372,7 @@ export async function translateFrenchSentenceToArabicAsync(frenchSentence: strin
 
   // 3. Query Backend Neural Translation API
   try {
-    const response = await fetch('/api/translate', {
+    const response = await fetch(apiUrl('/api/translate'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -431,7 +433,7 @@ export async function translateFrenchSentencesBatchAsync(frenchSentences: string
   // 2. Fetch all uncached sentences in one batch call
   if (uncachedTexts.length > 0) {
     try {
-      const response = await fetch('/api/translate', {
+      const response = await fetch(apiUrl('/api/translate'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -525,7 +527,7 @@ export async function translateEnglishToFrenchAsync(englishText: string): Promis
   const clean = englishText.trim();
 
   try {
-    const response = await fetch('/api/translate', {
+      const response = await fetch(apiUrl('/api/translate'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

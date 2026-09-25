@@ -5,6 +5,7 @@
  */
 
 import { AudioProject, SentenceItem, WordTiming } from '../types';
+import { apiUrl } from './api';
 
 export function getBestFrenchVoice(preferredVoiceId?: string): SpeechSynthesisVoice | null {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
@@ -159,7 +160,7 @@ export class AudioEngine {
 
     // 1. Try server French Male Neural voice
     try {
-      const res = await fetch('/api/tts', {
+      const res = await fetch(apiUrl('/api/tts'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
