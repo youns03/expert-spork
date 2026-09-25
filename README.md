@@ -37,3 +37,7 @@ pnpm run mobile:open
 ```
 
 The backend remains required for `/api/tts`, `/api/translate`, and `/api/transcribe-audio`. The Android SDK and Android Studio are required to produce the final APK or AAB.
+
+## Native Android track
+
+For a native Android application without WebView, the parallel project in `native-android/` uses Kotlin and Jetpack Compose. It connects to the same personal Node backend, which keeps the Gemini key on the server. This track is being migrated feature by feature; the existing React application remains the functional reference until audio playback, local storage, file access, and the full lesson UI have been ported and verified on Android.
