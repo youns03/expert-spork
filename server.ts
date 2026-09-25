@@ -8,14 +8,68 @@ dotenv.config();
 
 const app = express();
 const PORT = 3000;
+const MAX_TEXT_LENGTH = 5000;
+const MAX_BATCH_ITEMS = 100;
+const MAX_AUDIO_BASE64_LENGTH = 20_000_000;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_REQUESTS = 60;
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 
-app.use(express.json({ limit: '100mb' }));
-app.use(express.urlencoded({ extended: true, limit: '100mb' }));
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', 'microphone=(), camera=()');
+  next();
+});
+
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+
+app.use((req, res, next) => {
+  if (req.path === '/api/health') return next();
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  const current = rateLimitMap.get(ip);
+  if (!current || current.resetAt <= now) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return next();
+  }
+  if (current.count >= RATE_LIMIT_MAX_REQUESTS) {
+    res.setHeader('Retry-After', Math.ceil((current.resetAt - now) / 1000));
+    return res.status(429).json({ error: 'تم تجاوز حد الطلبات، حاول لاحقًا' });
+  }
+  current.count += 1;
+  return next();
+});
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of rateLimitMap) {
+    if (entry.resetAt <= now) rateLimitMap.delete(ip);
+  }
+}, RATE_LIMIT_WINDOW_MS).unref();
+
+function requireText(value: unknown, field: string, maxLength = MAX_TEXT_LENGTH): string {
+  if (typeof value !== 'string' || !value.trim()) throw new Error(`${field} غير صالح`);
+  const text = value.trim();
+  if (text.length > maxLength) throw new Error(`${field} يتجاوز الحد المسموح`);
+  return text;
+}
+
+function setBoundedCache<K, V>(cache: Map<K, V>, key: K, value: V, maxEntries = 200): void {
+  if (!cache.has(key) && cache.size >= maxEntries) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+  cache.set(key, value);
+}
 
 // Lazy init Gemini SDK
 let aiClient: GoogleGenAI | null = null;
 function getGenAI(): GoogleGenAI {
   if (!aiClient) {
+    if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY غير مضبوط على الخادم');
     aiClient = new GoogleGenAI({
       apiKey: process.env.GEMINI_API_KEY,
       httpOptions: {
@@ -100,12 +154,14 @@ async function synthesizeSpeechInternal(params: TTSRequestParams): Promise<{
   subtitles: any[];
   voice: string;
 }> {
-  const { text, voice = 'fr-FR-RemyMultilingualNeural', rate = 1.0, pitch = 0 } = params;
-  const rawText = text.trim();
-  if (!rawText) {
-    throw new Error('النص فارغ');
+  const rawText = requireText(params.text, 'النص');
+  const voice = typeof params.voice === 'string' ? params.voice : 'fr-FR-RemyMultilingualNeural';
+  const rate = Number.isFinite(Number(params.rate)) ? Number(params.rate) : 1.0;
+  const pitch = Number.isFinite(Number(params.pitch)) ? Number(params.pitch) : 0;
+  if (rate < 0.5 || rate > 2 || pitch < -50 || pitch > 50) {
+    throw new Error('إعدادات الصوت خارج النطاق المسموح');
   }
-
+  
   const cleanText = preprocessFrenchTextForSpeech(rawText);
 
   // Studio-grade Neural Voice Mapping
@@ -154,7 +210,7 @@ async function synthesizeSpeechInternal(params: TTSRequestParams): Promise<{
         subtitles: result.subtitle || [],
         voice: selectedVoice
       };
-      ttsAudioCache.set(cacheKey, output);
+      setBoundedCache(ttsAudioCache, cacheKey, output);
       return output;
     }
   } catch (edgeErr) {
@@ -183,7 +239,7 @@ async function synthesizeSpeechInternal(params: TTSRequestParams): Promise<{
           subtitles: [],
           voice: selectedVoice
         };
-        ttsAudioCache.set(cacheKey, output);
+        setBoundedCache(ttsAudioCache, cacheKey, output);
         return output;
       }
     }
@@ -210,7 +266,7 @@ async function synthesizeSpeechInternal(params: TTSRequestParams): Promise<{
       subtitles: [],
       voice: 'google-french'
     };
-    ttsAudioCache.set(cacheKey, output);
+    setBoundedCache(ttsAudioCache, cacheKey, output);
     return output;
   }
 
@@ -244,6 +300,12 @@ app.post('/api/tts/batch', async (req, res) => {
     const { items, voice = 'fr-FR-RemyMultilingualNeural', rate = 1.0, pitch = 0, concurrency = 8 } = req.body;
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'قائمة الجمل فارغة' });
+    }
+    if (items.length > MAX_BATCH_ITEMS) {
+      return res.status(413).json({ error: `الحد الأقصى لعناصر الدفعة هو ${MAX_BATCH_ITEMS}` });
+    }
+    if (items.some(item => typeof item === 'string' ? item.length > MAX_TEXT_LENGTH : !item || typeof item !== 'object' || typeof item.text !== 'string')) {
+      return res.status(400).json({ error: 'تحتوي الدفعة على عنصر غير صالح' });
     }
 
     const results: any[] = new Array(items.length);
@@ -318,6 +380,12 @@ function decodeHtmlEntities(str: string): string {
 app.post('/api/translate', async (req, res) => {
   try {
     const { text, texts, from = 'fr', to = 'ar' } = req.body;
+    if (typeof from !== 'string' || typeof to !== 'string' || !/^[a-z]{2,5}$/i.test(from) || !/^[a-z]{2,5}$/i.test(to)) {
+      return res.status(400).json({ error: 'رموز اللغة غير صالحة' });
+    }
+    if (texts !== undefined && (!Array.isArray(texts) || texts.length > MAX_BATCH_ITEMS || texts.some(item => typeof item !== 'string' || item.length > MAX_TEXT_LENGTH))) {
+      return res.status(400).json({ error: 'قائمة الترجمة غير صالحة أو تتجاوز الحد المسموح' });
+    }
 
     const translateSingleText = async (inputText: string): Promise<string> => {
       if (!inputText || !inputText.trim()) return '';
@@ -339,7 +407,7 @@ app.post('/api/translate', async (req, res) => {
           if (data?.responseData?.translatedText) {
             let candidate = decodeHtmlEntities(data.responseData.translatedText);
             if (candidate && !candidate.toUpperCase().includes('MYMEMORY WARNING') && candidate.length > 0) {
-              translationCacheMap.set(cacheKey, candidate);
+              setBoundedCache(translationCacheMap, cacheKey, candidate);
               return candidate;
             }
           }
@@ -356,7 +424,7 @@ app.post('/api/translate', async (req, res) => {
           const lData: any = await lResp.json();
           if (lData?.translation) {
             const resText = decodeHtmlEntities(lData.translation);
-            translationCacheMap.set(cacheKey, resText);
+            setBoundedCache(translationCacheMap, cacheKey, resText);
             return resText;
           }
         }
@@ -382,7 +450,8 @@ app.post('/api/translate', async (req, res) => {
       return res.json({ success: true, translations: results });
     }
 
-    const singleResult = await translateSingleText(text || '');
+    const singleText = requireText(text, 'النص');
+    const singleResult = await translateSingleText(singleText);
     return res.json({ success: true, translation: singleResult });
   } catch (error: any) {
     console.error('Translation error:', error);
@@ -398,9 +467,15 @@ app.post('/api/transcribe-audio', async (req, res) => {
     if (!audioBase64) {
       return res.status(400).json({ error: 'لم يتم إرسال الملف الصوتي' });
     }
+    if (typeof audioBase64 !== 'string' || audioBase64.length > MAX_AUDIO_BASE64_LENGTH || !/^(?:data:audio\/[a-z0-9.+-]+;base64,)?[A-Za-z0-9+/=\r\n]+$/i.test(audioBase64)) {
+      return res.status(413).json({ error: 'ملف الصوت غير صالح أو يتجاوز الحجم المسموح' });
+    }
 
     const ai = getGenAI();
     const cleanMimeType = mimeType || 'audio/mp3';
+    if (typeof cleanMimeType !== 'string' || !/^audio\/[a-z0-9.+-]+$/i.test(cleanMimeType)) {
+      return res.status(400).json({ error: 'نوع ملف الصوت غير صالح' });
+    }
     // Remove base64 header if present
     const rawBase64 = audioBase64.replace(/^data:audio\/[^;]+;base64,/, '');
 
