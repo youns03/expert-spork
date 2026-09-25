@@ -13,7 +13,7 @@ export interface SentenceItem {
   arabic?: string; // Arabic translation
   translation?: string;
   start: number; // start in seconds
-  end: number; // end in seconds
+  end: number;   // end in seconds
   words: WordTiming[];
   audioBlobId?: string;
   audioDataUrl?: string;
