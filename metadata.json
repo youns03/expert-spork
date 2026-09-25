@@ -1,0 +1,6 @@
+{
+  "name": "تعلم الفرنسية بالصوت",
+  "description": "تطبيق متقدم لتحويل النص الفرنسي إلى صوت طبيعي، وإنشاء دروس تفاعلية مع تظليل متزامن وترجمة عربية وتخزين محلي كامل دون الحاجة لمفاتيح API.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
